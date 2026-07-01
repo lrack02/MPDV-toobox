@@ -1,0 +1,13 @@
+-e .
+numpy
+scipy
+pandas
+matplotlib
+seaborn
+h5py
+scikit-image
+xarray
+tqdm
+ipykernel
+jupyterlab
+pytest

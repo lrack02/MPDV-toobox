@@ -1,0 +1,21 @@
+name: mpdv-toolbox
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12
+  - pip
+  - numpy
+  - scipy
+  - pandas
+  - matplotlib
+  - seaborn
+  - h5py
+  - scikit-image
+  - xarray
+  - tqdm
+  - jupyterlab
+  - ipykernel
+  - pytest
+  - pip:
+      - -e .
