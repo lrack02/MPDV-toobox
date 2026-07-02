@@ -49,3 +49,4 @@ def plot_spectrogram_multi(directory, pattern="*", xlim=[500, 3000], ylim=[0, 10
     if savepath:
         plt.savefig(savepath, dpi=300)
     plt.show()
+    return files

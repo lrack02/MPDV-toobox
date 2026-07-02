@@ -3,35 +3,33 @@
 import numpy as np
 import pandas as pd
 
-from ..io.alpss import load_probe_displacement, load_probe_positions, load_probe_velocity
+from ..io.alpss import (
+    extract_probe_series,
+    load_probe_positions,
+    load_shot_displacement,
+    load_shot_velocity,
+    probe_columns,
+)
 from .tilt import fit_plane, fit_plane_batch
 
 
-def process_pdv(fname, channels, positions_csv, z_thresh=20.0, output_csv=None):
+def process_pdv(base, positions_csv, z_thresh=20.0, output_csv=None):
     """
-    Process MPDV output data into a single aligned DataFrame.
+    Process one shot's ALPSS multipoint output into a single aligned DataFrame.
 
-    For each probe, reads the ``--displacement.csv`` output produced by ALPSS,
-    resamples all probes onto a common time grid, then computes a plane fit
-    across probe positions at every time step.
+    Reads the shot's combined ``-displacement.csv``/``-velocity--smooth.csv``
+    (one column per probe, produced by ALPSS's multipoint mode -- see
+    ``alpss_multipoint_with_config``), resamples every probe onto a common
+    time grid, then computes a plane fit across probe positions at every
+    time step.
 
     Parameters
     ----------
-    fname : str
-        Base file path prefix up to (and including) the trailing underscore,
-        e.g. r"...\\pdv_data\\output_data\\Multi_PDV_test--20260311--00023_"
-    channels : dict[str, pd.DataFrame]
-        Mapping of channel name (e.g. ``'ch1'``) to a DataFrame with at least
-        a ``'probe_number'`` column.  Example::
-
-            ch1 = pd.DataFrame([[1550.000, 1550.016, 10]],
-                               columns=["tar_lam", "ref_lam", "probe_number"])
-            ch2 = pd.DataFrame([[1531.116, 1531.140,  6],
-                                 [1537.397, 1537.453,  9],
-                                 [1543.730, 1543.810, 15]],
-                               columns=["tar_lam", "ref_lam", "probe_number"])
-            channels = {'ch1': ch1, 'ch2': ch2}
-
+    base : str
+        ALPSS multipoint output file stem for one shot, e.g.
+        r"...\\output_data\\C1--JHAMAA00004_2026-06-30_18-24-54_shot01--00000"
+        (i.e. ``{output_dir}/{PDV_FileName}``, with no ``-displacement.csv``/
+        ``-velocity--smooth.csv`` suffix).
     positions_csv : str
         Path to a CSV with columns ``x_position``, ``y_position``,
         ``probe_number`` (e.g. ``Spatial_Distribution/2026-02-18/positions.csv``).
@@ -56,40 +54,47 @@ def process_pdv(fname, channels, positions_csv, z_thresh=20.0, output_csv=None):
     """
     probe_locs = load_probe_positions(positions_csv, focus_scale=2.0)  # TEMPORARY FOR 125 mm focus
 
+    disp_df = load_shot_displacement(base)
+    try:
+        vel_df = load_shot_velocity(base)
+    except Exception:
+        vel_df = None
+
     # ------------------------------------------------------------------
-    # Load displacement/velocity data for every probe
+    # Load displacement/velocity data for every probe present in the shot
     # ------------------------------------------------------------------
     probes = []
-    for ch_name, ch_df in channels.items():
-        for _, row in ch_df.iterrows():
-            probe_num = int(row["probe_number"])
-            try:
-                tvals, zvals = load_probe_displacement(fname, ch_name, probe_num)
+    for probe_num in probe_columns(disp_df):
+        try:
+            tvals, zvals = extract_probe_series(disp_df, probe_num, scale=1e6)
+            if len(tvals) == 0:
+                print(f"Warning: probe {probe_num} has no displacement data; skipping.")
+                continue
 
-                loc = probe_locs[probe_locs["probe_number"] == probe_num]
-                if loc.empty:
-                    print(f"Warning: probe {probe_num} not found in positions file; "
-                          "setting x/y to NaN (excluded from plane fit).")
-                    x, y = np.nan, np.nan
-                else:
-                    x = float(loc["x_position"].values[0])
-                    y = float(loc["y_position"].values[0])
+            loc = probe_locs[probe_locs["probe_number"] == probe_num]
+            if loc.empty:
+                print(f"Warning: probe {probe_num} not found in positions file; "
+                      "setting x/y to NaN (excluded from plane fit).")
+                x, y = np.nan, np.nan
+            else:
+                x = float(loc["x_position"].values[0])
+                y = float(loc["y_position"].values[0])
 
-                t_zero = tvals[np.argmin(np.abs(zvals - z_thresh))]
-                tvals = tvals - t_zero
+            t_zero = tvals[np.argmin(np.abs(zvals - z_thresh))]
+            tvals = tvals - t_zero
 
-                try:
-                    tv_vel, vvals = load_probe_velocity(fname, ch_name, probe_num)
-                    tv_vel = tv_vel - t_zero
-                except Exception:
-                    tv_vel, vvals = None, None
+            if vel_df is not None:
+                tv_vel, vvals = extract_probe_series(vel_df, probe_num, scale=1.0)
+                tv_vel = tv_vel - t_zero
+            else:
+                tv_vel, vvals = None, None
 
-                probes.append({"num": probe_num, "x": x, "y": y,
-                               "t": tvals, "z": zvals,
-                               "t_vel": tv_vel, "v": vvals,
-                               "t0": t_zero})
-            except Exception as e:
-                print(f"Warning: could not load probe {probe_num}: {e}")
+            probes.append({"num": probe_num, "x": x, "y": y,
+                           "t": tvals, "z": zvals,
+                           "t_vel": tv_vel, "v": vvals,
+                           "t0": t_zero})
+        except Exception as e:
+            print(f"Warning: could not load probe {probe_num}: {e}")
 
     if not probes:
         raise ValueError("No probe data could be loaded.")

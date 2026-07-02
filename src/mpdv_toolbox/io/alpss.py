@@ -1,6 +1,5 @@
 """Loaders for ALPSS-processed multi-probe PDV output."""
 
-import numpy as np
 import pandas as pd
 
 
@@ -17,21 +16,36 @@ def load_probe_positions(positions_csv, focus_scale=2.0):
     return probe_locs
 
 
-def load_probe_displacement(fname, ch_name, probe_num):
-    """Load one probe's ALPSS displacement CSV.
+def load_shot_displacement(base):
+    """Load a shot's combined ALPSS multipoint displacement CSV.
 
-    Returns time (s) and displacement (um).
+    ``base`` is the output file stem for one shot, e.g. ``{output_dir}/{PDV_FileName}``
+    (matching ALPSS's ``alpss_multipoint_with_config`` output naming). Returns a
+    DataFrame with a ``time`` column (s) and one ``probe_<N>`` column (m) per
+    probe; probes absent from this shot are all-NaN.
     """
-    path = f"{fname}{ch_name}_probe{probe_num}-displacement.csv"
-    raw = np.genfromtxt(path, delimiter=",")
-    return raw[:, 0], raw[:, 1] * 1e6
+    return pd.read_csv(f"{base}-displacement.csv")
 
 
-def load_probe_velocity(fname, ch_name, probe_num):
-    """Load one probe's ALPSS smoothed velocity CSV.
+def load_shot_velocity(base):
+    """Load a shot's combined ALPSS multipoint smoothed-velocity CSV.
 
-    Returns time (s) and velocity (m/s).
+    Same layout as ``load_shot_displacement`` but with velocity in m/s.
     """
-    path = f"{fname}{ch_name}_probe{probe_num}-velocity--smooth.csv"
-    raw = np.genfromtxt(path, delimiter=",")
-    return raw[:, 0], raw[:, 1]
+    return pd.read_csv(f"{base}-velocity--smooth.csv")
+
+
+def probe_columns(shot_df):
+    """Probe numbers present as columns in a loaded shot DataFrame, in column order."""
+    return [int(c.split("_")[1]) for c in shot_df.columns if c != "time"]
+
+
+def extract_probe_series(shot_df, probe_num, scale=1.0):
+    """Pull one probe's (time, value) series out of a combined shot DataFrame.
+
+    Drops samples where that probe has no data (NaN) -- ALPSS pads a shot's
+    shared time axis with NaN outside each probe's own valid window.
+    """
+    col = f"probe_{probe_num}"
+    valid = shot_df[col].notna()
+    return shot_df["time"][valid].to_numpy(), shot_df[col][valid].to_numpy() * scale
