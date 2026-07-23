@@ -13,7 +13,7 @@ from ..io.alpss import (
 from .tilt import fit_plane, fit_plane_batch
 
 
-def process_pdv(base, positions_csv, z_thresh=20.0, output_csv=None):
+def process_pdv(base, positions_csv, focus_scale = 2, z_thresh=20.0, output_csv=None):
     """
     Process one shot's ALPSS multipoint output into a single aligned DataFrame.
 
@@ -52,7 +52,7 @@ def process_pdv(base, positions_csv, z_thresh=20.0, output_csv=None):
         * ``r_squared`` — goodness of fit of the plane (unreliable when flyer is flat)
         * ``fit_rmse``  — RMS residual of the plane fit in µm (lower = better, flat-safe)
     """
-    probe_locs = load_probe_positions(positions_csv, focus_scale=2.0)  # TEMPORARY FOR 125 mm focus
+    probe_locs = load_probe_positions(positions_csv, focus_scale=focus_scale) 
 
     disp_df = load_shot_displacement(base)
     try:
