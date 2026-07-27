@@ -41,3 +41,28 @@ def collect_start_times(data_dir, pattern="*--combined.csv", threshold=1e-6):
 
     all_probes = sorted(all_probes, key=lambda x: int(x.split("_")[1]))
     return pd.DataFrame(rows, columns=["filename"] + all_probes)
+
+def cusum(signal, mu0, sigma, h, k):
+    """
+    Detect a single mean shift from mu0 using CUSUM.
+    Returns:
+    - Detection index
+    - Estimated change point index
+    - Full G[k] array
+    """
+    # Score for general mean change
+    Z = (signal - mu0)/(np.sqrt(sigma))
+    s = Z - k
+    G = np.zeros_like(s)
+
+    for k in range(1, len(s)):
+        G[k] = max(G[k-1] + s[k], 0)
+
+        if G[k] > h:
+            detect_idx = k
+            S = np.cumsum(s[:detect_idx])
+            change_idx = np.argmin(S)
+            return detect_idx, change_idx, G, s
+
+    # If no change detected
+    return None, None, G, s
