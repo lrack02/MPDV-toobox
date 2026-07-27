@@ -83,6 +83,16 @@ def compute_relative_surface(data, positions_csv, t, reference_probe=None,
     xi = np.linspace(x.min(), x.max(), grid_size)
     yi = np.linspace(y.min(), y.max(), grid_size)
     Xi, Yi = np.meshgrid(xi, yi)
-    Zi = griddata((x, y), z, (Xi, Yi), method="cubic")
+    try:
+        Zi = griddata((x, y), z, (Xi, Yi), method="cubic")
+    except Exception as e:
+        # Cubic/linear griddata triangulate the probe x/y points with Qhull, which
+        # fails if too few probes have valid data at this time or they're collinear
+        # (e.g. only one leg + center, before the rest of the array has started moving).
+        raise ValueError(
+            f"Could not interpolate a surface from {len(x)} probe(s) at "
+            f"t = {t_actual * 1e9:.1f} ns (they may be too few or collinear "
+            f"for a 2-D triangulation): {e}"
+        ) from e
 
     return x, y, z, Xi, Yi, Zi, t_actual
