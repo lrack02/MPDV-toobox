@@ -13,7 +13,7 @@ from ..io.alpss import (
 from .tilt import fit_plane, fit_plane_batch
 
 
-def process_pdv(base, positions_csv, focus_scale = 2, z_thresh=20.0, output_csv=None):
+def process_pdv(base, positions_csv, focus_scale=2, z_thresh=20.0, delays=None, output_csv=None):
     """
     Process one shot's ALPSS multipoint output into a single aligned DataFrame.
 
@@ -34,9 +34,16 @@ def process_pdv(base, positions_csv, focus_scale = 2, z_thresh=20.0, output_csv=
         Path to a CSV with columns ``x_position``, ``y_position``,
         ``probe_number`` (e.g. ``Spatial_Distribution/2026-02-18/positions.csv``).
     z_thresh : float, optional
-        Displacement threshold in microns used to zero each probe's time axis.
-        Time is shifted so t=0 is when the probe's displacement first crosses
-        this value.  Defaults to 20.0 µm.
+        Displacement threshold in microns used to zero a probe's time axis
+        when no known delay is supplied for it via ``delays``. Time is
+        shifted so t=0 is when the probe's displacement first crosses this
+        value.  Defaults to 20.0 µm.
+    delays : dict[int, float], optional
+        Known per-probe zero-time offsets (seconds) -- e.g. from a prior
+        ``t0`` calibration -- keyed by probe number. For any probe number
+        present here, its value is used as ``t0`` directly instead of the
+        ``z_thresh`` crossing. Probes not in ``delays`` still fall back to
+        the ``z_thresh`` crossing, so the two can be mixed.
     output_csv : str, optional
         If given, the result DataFrame is saved to this path.
 
@@ -80,7 +87,10 @@ def process_pdv(base, positions_csv, focus_scale = 2, z_thresh=20.0, output_csv=
                 x = float(loc["x_position"].values[0])
                 y = float(loc["y_position"].values[0])
 
-            t_zero = tvals[np.argmin(np.abs(zvals - z_thresh))]
+            if delays is not None and probe_num in delays:
+                t_zero = delays[probe_num]
+            else:
+                t_zero = tvals[np.argmin(np.abs(zvals - z_thresh))]
             tvals = tvals - t_zero
 
             if vel_df is not None:
