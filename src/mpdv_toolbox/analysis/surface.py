@@ -8,7 +8,7 @@ from ..io.alpss import load_probe_positions
 
 
 def compute_relative_surface(data, positions_csv, t, reference_probe=None,
-                              focus_scale=2.0, grid_size=300):
+                              focus_scale=2.0, grid_size=300, interpmethod='cubic'):
     """Reconstruct the flyer's relative surface height at time ``t`` from each
     probe's displacement, then interpolate onto a regular x/y grid.
 
@@ -84,7 +84,7 @@ def compute_relative_surface(data, positions_csv, t, reference_probe=None,
     yi = np.linspace(y.min(), y.max(), grid_size)
     Xi, Yi = np.meshgrid(xi, yi)
     try:
-        Zi = griddata((x, y), z, (Xi, Yi), method="cubic")
+        Zi = griddata((x, y), z, (Xi, Yi), method=interpmethod)
     except Exception as e:
         # Cubic/linear griddata triangulate the probe x/y points with Qhull, which
         # fails if too few probes have valid data at this time or they're collinear

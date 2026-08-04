@@ -24,7 +24,7 @@ def _nearest_index(time_arr, t):
 
 
 def plot_flyer_surface_heatmap(data, positions_csv, t, reference_probe=None,
-                                focus_scale=2.0, grid_size=300, ax=None):
+                                focus_scale=2.0, grid_size=300, ax=None, interpmethod='cubic'):
     """2-D color-mesh reconstruction of the flyer surface at time ``t``.
 
     Interpolates each probe's displacement (relative to ``reference_probe``,
@@ -35,7 +35,7 @@ def plot_flyer_surface_heatmap(data, positions_csv, t, reference_probe=None,
     """
     x, y, z, Xi, Yi, Zi, t_actual = compute_relative_surface(
         data, positions_csv, t, reference_probe=reference_probe,
-        focus_scale=focus_scale, grid_size=grid_size)
+        focus_scale=focus_scale, grid_size=grid_size, interpmethod=interpmethod)
 
     clim = np.nanmax(np.abs(Zi))
 
@@ -62,7 +62,7 @@ def plot_flyer_surface_heatmap(data, positions_csv, t, reference_probe=None,
 
 
 def plot_flyer_surface_3d(data, positions_csv, t, reference_probe=None,
-                           focus_scale=2.0, grid_size=300, elev=20, azim=45, ax=None):
+                           focus_scale=2.0, grid_size=300, elev=20, azim=45, ax=None, interpmethod='cubic'):
     """3-D surface reconstruction of the flyer at time ``t``.
 
     Interpolates each probe's displacement (relative to ``reference_probe``,
@@ -73,7 +73,7 @@ def plot_flyer_surface_3d(data, positions_csv, t, reference_probe=None,
     """
     x, y, z, Xi, Yi, Zi, t_actual = compute_relative_surface(
         data, positions_csv, t, reference_probe=reference_probe,
-        focus_scale=focus_scale, grid_size=grid_size)
+        focus_scale=focus_scale, grid_size=grid_size, interpmethod=interpmethod)
 
     clim = np.nanmax(np.abs(Zi))
 

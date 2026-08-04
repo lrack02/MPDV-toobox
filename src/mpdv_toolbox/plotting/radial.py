@@ -302,7 +302,7 @@ def plot_radial_displacement_3d(data, positions_csv, center_probe, legs, timeste
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
     cbar = fig.colorbar(sm, ax=ax, shrink=0.7, pad=0.18)
-    cbar.set_label("Deviation from Center Probe (µm)", fontsize=_LABEL_FONTSIZE)
+    cbar.set_label(f"Deflection w (µm)", fontsize=_LABEL_FONTSIZE)
     cbar.ax.tick_params(labelsize=_TICK_FONTSIZE)
 
     legend_handles = [Line2D([0], [0], marker=_CENTER_MARKER, color=_LINE_COLOR, linestyle="",
@@ -315,9 +315,9 @@ def plot_radial_displacement_3d(data, positions_csv, center_probe, legs, timeste
 
     ax.set_xlabel("x position (µm)", fontsize=_LABEL_FONTSIZE, labelpad=14)
     ax.set_ylabel("y position (µm)", fontsize=_LABEL_FONTSIZE, labelpad=14)
-    ax.set_zlabel("Displacement (µm)", fontsize=_LABEL_FONTSIZE, labelpad=14)
-    ax.set_title(f"t = {t_min * 1e9:.0f}-{t_max * 1e9:.0f} ns  (Δt = {timestep * 1e9:.1f} ns)",
-                 fontsize=_TITLE_FONTSIZE)
+    ax.set_zlabel("z position (µm)", fontsize=_LABEL_FONTSIZE, labelpad=14)
+    # ax.set_title(f"t = {t_min * 1e9:.0f}-{t_max * 1e9:.0f} ns  (Δt = {timestep * 1e9:.1f} ns)",
+    #              fontsize=_TITLE_FONTSIZE)
     ax.tick_params(axis="both", which="major", labelsize=_TICK_FONTSIZE, pad=6)
     ax.view_init(elev=elev, azim=azim)
 
