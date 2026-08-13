@@ -2,6 +2,7 @@
 
 import pandas as pd
 import numpy as np
+from mpdv_toolbox.analysis.displacement_error import displacement_uncert
 
 
 def load_probe_positions(positions_csv, focus_scale=2.0):
@@ -40,12 +41,16 @@ def load_shot(base, shot_type = "displacement", delays_df=None):
     time = data["time"].to_numpy()
     delay_map = dict(zip(delays_df["probe_number"], delays_df["delay"]))
 
-    disp_df = pd.DataFrame({"time": time})
+    data_df = pd.DataFrame({"time": time})
     for col in data.columns:
         if col == "time":
             continue
         probe_number = int(col.split("_")[1])
         delay = delay_map.get(probe_number, 0.0)
-        disp_df[col] = np.interp(time + delay, time, data[col].to_numpy(), left=np.nan, right=np.nan)
+        data_df[col] = np.interp(time + delay, time, data[col].to_numpy(), left=np.nan, right=np.nan)
 
-    return disp_df
+    return data_df
+
+def filter_shot(data_df, uncert, threshold=10e-6):
+    data_df_filtered = data_df[uncert<threshold]
+    return data_df_filtered
