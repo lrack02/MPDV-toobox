@@ -1,23 +1,33 @@
-import math
-
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
 from scipy.stats import norm
 
+def extract_analytical(voltage_df, time):
+    """Extracts analytial signal for the time period where the alpss processor was conducted. Time may come from disp_df or other output"""
+    t_start_idx = np.argwhere(time.values[0]==voltage_df["time"].values)[0][0]
+    t_end_idx = np.argwhere(time.values[-1]==voltage_df["time"].values)[0][0]
 
-def signal_to_noise(real, imag, noise_floor):
+    voltage = voltage_df.values[t_start_idx:t_end_idx+1,1:] #eliminate time column, end inclusive
+    real = voltage[:, np.arange(0, voltage.shape[1]-1, step=2)] #real columns are even
+    imag = voltage[:, np.arange(1, voltage.shape[1], step=2)] #imag columns are odd
+
+    analytical = real + 1j * imag
+
+    print(analytical.shape)
+    return analytical
+
+def signal_to_noise(analytical, noise_floor):
     """Estimate per-sample signal-to-noise ratio. 
     """
-    amplitude = np.hypot(real, imag)
+    amplitude = np.abs(analytical)
 
     return amplitude / noise_floor
 
-def unwrap_phase(real, imag):
-    analytical = real + 1j * imag
+def unwrap_phase(analytical):
     theta = np.angle(analytical)
-    delta_theta = np.diff(theta)
-    delta_theta = np.insert(delta_theta, 0 , 1e-10)
+    delta_theta = np.diff(theta, axis=0)
+    delta_theta = np.insert(delta_theta, 0 , 1e-10, axis=0)
     phas = np.unwrap(theta)
 
     return theta, delta_theta, phas
@@ -29,12 +39,12 @@ def phas_to_pos(time, phas, lam, fit_time):
 
     return pos
 
-def phas_uncert(delta_theta, snr):
-    var_theta = 1/snr
-    a = var_theta[:-1]
-    b = var_theta[1:]
+def phas_uncert(delta_theta, noise_frac):
+    var_theta = noise_frac
+    a = var_theta[:-1,:]
+    b = var_theta[1:,:]
     var_delta_theta = a + b
-    var_delta_theta = np.insert(var_delta_theta, 0 , 1e-10)
+    var_delta_theta = np.insert(var_delta_theta, 0 , 1e-10, axis=0)
     
     p1 = 1 - norm.cdf(np.pi, loc=delta_theta, scale=np.sqrt(var_delta_theta))
     p2 = norm.cdf(-np.pi, loc=delta_theta, scale=np.sqrt(var_delta_theta))
@@ -42,65 +52,91 @@ def phas_uncert(delta_theta, snr):
     var_f = p2 * (1 - p2) + p1 * (1 - p1) + 2 * p1 * p2
 
     # this assumes independence between each time measurement. TODO: this is not necessarily true
-    var_phas = var_theta + 4 * np.pi**2 * np.cumsum(var_f)
+    var_phas = var_theta + 4 * np.pi**2 * np.nancumsum(var_f, axis=0)
 
     return var_delta_theta, var_phas
 
-def displacement_uncert(real, imag, snr):
-    theta, delta_theta, phas = unwrap_phase(real, imag)
-    var_delta_theta, var_phas = phas_uncert(delta_theta, snr)
+def displacement_uncert(voltage_df, noise_frac_df, lam):
+    time = noise_frac_df["time"]
+    analytical = extract_analytical(voltage_df, time)
+    snr_vals = noise_frac_df[noise_frac_df.columns[1:]].to_numpy()
+
+    theta, delta_theta, phas = unwrap_phase(analytical)
+    var_delta_theta, var_phas = phas_uncert(delta_theta, snr_vals)
     sigma_pos = lam / 2 * np.pi * np.sqrt(var_phas)
 
-    return sigma_pos
+    sigma_disp_df = pd.DataFrame(data=np.column_stack((time, sigma_pos)), columns=noise_frac_df.columns)
 
-
+    return sigma_disp_df
 
 
 if __name__ == "__main__":
-    import pandas as pd
+    from mpdv_toolbox.io.alpss import load_shot, filter_shot
 
-    fname = r"C:\Users\lucas\OneDrive - Johns Hopkins\Ramesh Lab - Research\Papers\MPDV\MPDV_velocity_experiments\2026-06-30_velocity_vacuum\output_data\C1--JHAMAA00004_2026-06-30_18-31-54_shot31--00000-voltage.csv"
-    probe_num = 19
+    base = r"C:\Users\lucas\OneDrive - Johns Hopkins\Ramesh Lab - Research\Papers\MPDV\MPDV_velocity_experiments\2026-06-30_velocity_vacuum\output_data\C1--JHAMAA00004_2026-06-30_18-27-08_shot10--00000"
 
-    df = pd.read_csv(fname)
-    valid = df[f"probe_{probe_num}_real"].notna()
-    time = df["time"][valid].to_numpy()
+    voltage_df = load_shot(base, "voltage")
+    disp_df = load_shot(base, "displacement")
+    vel_df = load_shot(base, "velocity--smooth")
+    sigma_vel_df = load_shot(base, "veluncert")
+    noise_frac_df = load_shot(base, "noisefrac")
 
-    mask = (time > 750e-9) & (time < 2200e-9)
+    column_names = disp_df.columns
 
-    time = time[mask]
-    real = df[f"probe_{probe_num}_real"][valid].to_numpy()[mask]
-    imag = df[f"probe_{probe_num}_imag"][valid].to_numpy()[mask]
+    time = disp_df["time"].to_numpy()
+    # mask = (time > 750e-9) & (time < 2200e-9)
 
-    noise_floor = 1e-4  # TODO: incorporate alpss noise frac
-    fs = 1.0 / (time[1] - time[0])
-    lam = 1.55e-6  # from this shot's ALPSS -inputs.csv
+    # # Filter to the time of interest
+    # voltage_df = voltage_df[mask]
+    # time = voltage_df["time"].to_numpy()
 
-    uncertainty_multiplier = 100  # exaggerate the uncertainty band so it's visible against the full displacement
+    analytical = extract_analytical(voltage_df, disp_df["time"])
 
-    theta, delta_theta, phas = unwrap_phase(real, imag)
+    sigma_disp_df = displacement_uncert(voltage_df, noise_frac_df, 1550e-9)
 
-    snr = signal_to_noise(real, imag, noise_floor)
+    print(sigma_disp_df)
 
-    var_delta_theta, var_phas = phas_uncert(delta_theta, snr)
-
-    sigma_pos = lam / 2 * np.pi * np.sqrt(var_phas)
-
-    plt.plot(time*1e9, sigma_pos*1e6)
-    plt.xlabel("Time (ns)")
-    plt.ylabel("Displacement Uncertainty (microns)")
-    plt.savefig("displacement_uncert2.png",dpi=300)
+    plt.subplots(1,2,sharex=True)
+    for probe in column_names[1:]:
+        plt.subplot(121)
+        plt.plot(disp_df["time"]*1e9, disp_df[probe]*1e6, label=probe)
+        plt.fill_between(sigma_disp_df["time"]*1e9, 
+                         (disp_df[probe] - sigma_disp_df[probe])*1e6, 
+                         (disp_df[probe] + sigma_disp_df[probe])*1e6,
+                         alpha=0.5)
+        plt.xlabel("time (ns)")
+        plt.ylabel("displacement (microns)")
+        plt.subplot(122)
+        plt.plot(vel_df["time"]*1e9, vel_df[probe]*1e6, label=probe)
+        plt.fill_between(sigma_vel_df["time"]*1e9, 
+                         (vel_df[probe] - sigma_vel_df[probe])*1e6, 
+                         (vel_df[probe] + sigma_vel_df[probe])*1e6,
+                         alpha=0.5)
+        plt.xlabel("time (ns)")
+        plt.ylabel("velocity (m/s)")
+    plt.legend()
     plt.show()
 
-    idx = 10000
+    plt.subplots(1,2,sharex=True)
+    for probe in column_names[1:]:
+        plt.subplot(121)
+        plt.plot(sigma_disp_df["time"]*1e9, sigma_disp_df[probe]*1e6, label=probe)
+        plt.xlabel("time (ns)")
+        plt.ylabel("displacement uncertainty (microns)")
+        plt.subplot(122)
+        plt.plot(noise_frac_df["time"]*1e9, 1/noise_frac_df[probe], label=probe)
+        plt.xlabel("time (ns)")
+        plt.ylabel("snr")
+    plt.legend()
+    plt.show()
+
     
-    dt = np.linspace(-2 * np.pi, 2 * np.pi, 1000)
-    time_idx = np.argmin(np.abs(1000e-9 - time))
-    pdf = norm.pdf(dt, loc=delta_theta[time_idx], scale=np.sqrt(1/snr[time_idx]))
-    plt.plot(dt, pdf)
-    # plt.xlim([-2 * np.pi, 2 * np.pi])
-    plt.show()
+    # dt = np.linspace(-2 * np.pi, 2 * np.pi, 1000)
+    # time_idx = np.argmin(np.abs(1000e-9 - time))
+    # pdf = norm.pdf(dt, loc=delta_theta[time_idx], scale=np.sqrt(1/snr[time_idx]))
+    # plt.plot(dt, pdf)
+    # # plt.xlim([-2 * np.pi, 2 * np.pi])
+    # plt.show()
 
-    plt.plot()
 
 
