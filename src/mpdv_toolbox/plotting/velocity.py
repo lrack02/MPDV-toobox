@@ -3,7 +3,7 @@
 import matplotlib.pyplot as plt
 
 
-def plot_position_velocity(data, mask=None, figsize=(10, 5)):
+def plot_position_velocity(disp_df, vel_df, mask=None, figsize=(10, 5)):
     """Plot displacement and velocity vs time for every probe in ``data``.
 
     data : pd.DataFrame
@@ -16,11 +16,11 @@ def plot_position_velocity(data, mask=None, figsize=(10, 5)):
 
     fig, axes = plt.subplots(1, 2, figsize=figsize)
 
-    probe_nums = [c.split("_")[1] for c in data.columns if c.endswith("_pos")]
+    probe_nums = disp_df.columns[1:]
     for probe_num in probe_nums:
-        label = f"probe_{probe_num}"
-        axes[0].plot(data["time"][mask] * 1e9, data[f"{label}_pos"][mask], label=label)
-        axes[1].plot(data["time"][mask] * 1e9, data[f"{label}_vel"][mask], label=label)
+        label = probe_num
+        axes[0].plot(disp_df["time"][mask] * 1e9, disp_df[label][mask], label=label)
+        axes[1].plot(vel_df["time"][mask] * 1e9, vel_df[label][mask], label=label)
 
     axes[0].set_xlabel("Time (ns)")
     axes[0].set_ylabel("Position (microns)")
