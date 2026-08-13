@@ -1,6 +1,7 @@
 """Loaders for ALPSS-processed multi-probe PDV output."""
 
 import pandas as pd
+import numpy as np
 
 
 def load_probe_positions(positions_csv, focus_scale=2.0):
@@ -16,36 +17,35 @@ def load_probe_positions(positions_csv, focus_scale=2.0):
     return probe_locs
 
 
-def load_shot_displacement(base):
+def load_shot(base, shot_type = "displacement", delays_df=None):
     """Load a shot's combined ALPSS multipoint displacement CSV.
 
-    ``base`` is the output file stem for one shot, e.g. ``{output_dir}/{PDV_FileName}``
+    base: The output file stem for one shot, e.g. ``{output_dir}/{PDV_FileName}``
     (matching ALPSS's ``alpss_multipoint_with_config`` output naming). Returns a
     DataFrame with a ``time`` column (s) and one ``probe_<N>`` column (m) per
     probe; probes absent from this shot are all-NaN.
+
+    delays_df: Optional relative probe delay dataframe with ``probe_number`` and
+    ``delay`` (seconds) columns. Each probe's data is shifted so that
+    ``new_time = time - delay``, then resampled back onto the original
+    (unshifted) time grid. Probes present in the shot but missing from
+    ``delays_df`` are left unshifted (delay=0). If ``delays_df`` is omitted,
+    no shifting is applied and the raw CSV is returned as-is.
     """
-    return pd.read_csv(f"{base}-displacement.csv")
+    data = pd.read_csv(f"{base}-{shot_type}.csv")
 
+    if delays_df is None:
+        return data
 
-def load_shot_velocity(base):
-    """Load a shot's combined ALPSS multipoint smoothed-velocity CSV.
+    time = data["time"].to_numpy()
+    delay_map = dict(zip(delays_df["probe_number"], delays_df["delay"]))
 
-    Same layout as ``load_shot_displacement`` but with velocity in m/s.
-    """
-    return pd.read_csv(f"{base}-velocity--smooth.csv")
+    disp_df = pd.DataFrame({"time": time})
+    for col in data.columns:
+        if col == "time":
+            continue
+        probe_number = int(col.split("_")[1])
+        delay = delay_map.get(probe_number, 0.0)
+        disp_df[col] = np.interp(time + delay, time, data[col].to_numpy(), left=np.nan, right=np.nan)
 
-
-def probe_columns(shot_df):
-    """Probe numbers present as columns in a loaded shot DataFrame, in column order."""
-    return [int(c.split("_")[1]) for c in shot_df.columns if c != "time"]
-
-
-def extract_probe_series(shot_df, probe_num, scale=1.0):
-    """Pull one probe's (time, value) series out of a combined shot DataFrame.
-
-    Drops samples where that probe has no data (NaN) -- ALPSS pads a shot's
-    shared time axis with NaN outside each probe's own valid window.
-    """
-    col = f"probe_{probe_num}"
-    valid = shot_df[col].notna()
-    return shot_df["time"][valid].to_numpy(), shot_df[col][valid].to_numpy() * scale
+    return disp_df
