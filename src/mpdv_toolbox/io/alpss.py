@@ -51,6 +51,8 @@ def load_shot(base, shot_type = "displacement", delays_df=None):
 
     return data_df
 
-def filter_shot(data_df, uncert, threshold=10e-6):
-    data_df_filtered = data_df[uncert<threshold]
+def filter_shot(data_df, uncert_df, threshold=10e-6):
+    mask = uncert_df.values[:, 1:] < threshold
+    data_df_filtered = data_df.copy()
+    data_df_filtered.iloc[:, 1:] = np.where(mask, data_df.values[:, 1:], np.nan)
     return data_df_filtered
