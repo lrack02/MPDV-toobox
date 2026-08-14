@@ -3,6 +3,8 @@
 import pandas as pd
 import numpy as np
 from mpdv_toolbox.analysis.displacement_error import displacement_uncert
+import re
+from pathlib import Path
 
 
 def load_probe_positions(positions_csv, focus_scale=2.0):
@@ -50,6 +52,21 @@ def load_shot(base, shot_type = "displacement", delays_df=None):
         data_df[col] = np.interp(time + delay, time, data[col].to_numpy(), left=np.nan, right=np.nan)
 
     return data_df
+
+def list_bases(output_dir):
+    """Unique shot base filenames (the `base` load_shot()/save_displacement_uncert()
+    expect) in an ALPSS multipoint output_data directory, e.g.
+    C1--JHAMAA00004_2026-06-30_18-24-54_shot01--00000
+    """
+    output_dir = Path(output_dir)
+    pattern = re.compile(r"^(.*--\d+)(?:-.*|_probe\d+-plots\.png)$")
+
+    bases = set()
+    for f in output_dir.iterdir():
+        m = pattern.match(f.name)
+        if m:
+            bases.add(m.group(1))
+    return sorted(bases)
 
 def filter_shot(data_df, uncert_df, threshold=10e-6):
     mask = uncert_df.values[:, 1:] < threshold
