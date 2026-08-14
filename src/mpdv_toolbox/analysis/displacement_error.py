@@ -55,16 +55,7 @@ def f_single_uncert(delta_theta, var_delta_theta):
     # f is +1 w.p. F_minus, -1 w.p. (1 - F_plus), 0 otherwise.
     return F_minus * (1 - F_minus) + F_plus * (1 - F_plus) + 2 * F_minus * (1 - F_plus)
 
-### Fixed bivariate normal used by f_double_uncert: standard normal marginals with
-### correlation rho = -1/2, the value Cov(Delta_theta_i, Delta_theta_i-1) /
-### sqrt(Var(Delta_theta_i) Var(Delta_theta_i-1)) reduces to when the underlying
-### theta noise is locally constant (Var(theta_i) ~= Var(theta_i-1) ~= Var(theta_i-2)):
-### Cov = -v, Var(Delta_theta) = 2v each -> rho = -v / (2v) = -1/2, independent of v.
-### Checked against this project's real shot data: rho is within 0.003 of -1/2 for the
-### 5th-95th percentile of samples, so this is a good approximation, not a rough one -
-### but it IS an approximation (assumes the noise floor doesn't jump step-to-step) and
-### is the reason this function no longer needs var_theta (only the standardized
-### marginal scale, from var_delta_theta, matters once rho is fixed).
+### Fixed bivariate normal used by f_double_uncert: standard normal marginals
 _RHO = -0.5
 _STANDARD_BIVARIATE_RHO = multivariate_normal(mean=[0, 0], cov=[[1, _RHO], [_RHO, 1]])
 
@@ -238,12 +229,15 @@ def displacement_uncert_independent(voltage_df, noise_frac_df, lam):
 
     return sigma_disp_df
 
+def save_displacement_uncert(base, sigma_disp_df):
+    sigma_disp_df.to_csv(base + "-dispuncert.csv")
+
 
 if __name__ == "__main__":
     from mpdv_toolbox.io.alpss import load_shot, filter_shot
     from matplotlib.colors import LinearSegmentedColormap
 
-    base = r"C:\Users\lucas\OneDrive - Johns Hopkins\Ramesh Lab - Research\Papers\MPDV\MPDV_velocity_experiments\2026-06-30_velocity_vacuum\output_data\C1--JHAMAA00004_2026-06-30_18-27-46_shot13--00000"
+    base = r"C:\Users\lucas\OneDrive - Johns Hopkins\Ramesh Lab - Research\Papers\MPDV\MPDV_velocity_experiments\2026-06-30_velocity_vacuum\output_data\C1--JHAMAA00004_2026-06-30_18-32-33_shot34--00000"
 
     voltage_df = load_shot(base, "voltage")
     disp_df = load_shot(base, "displacement")
@@ -269,10 +263,10 @@ if __name__ == "__main__":
         plt.xlabel("time (ns)")
         plt.ylabel("displacement (microns)")
         plt.subplot(122)
-        plt.plot(vel_df["time"]*1e9, vel_df[probe]*1e6, label=probe)
+        plt.plot(vel_df["time"]*1e9, vel_df[probe], label=probe)
         plt.fill_between(sigma_vel_df["time"]*1e9, 
-                         (vel_df[probe] - sigma_vel_df[probe])*1e6, 
-                         (vel_df[probe] + sigma_vel_df[probe])*1e6,
+                         (vel_df[probe] - sigma_vel_df[probe]), 
+                         (vel_df[probe] + sigma_vel_df[probe]),
                          alpha=0.5)
         plt.xlabel("time (ns)")
         plt.ylabel("velocity (m/s)")
@@ -303,7 +297,7 @@ if __name__ == "__main__":
         plt.ylabel("displacement uncertainty (microns)")
         plt.title("correlated")
         plt.subplot(122)
-        plt.plot(sigma_disp_df_independent["time"]*1e9, sigma_disp_df_independent[probe]/sigma_disp_df[probe], label=probe)
+        plt.plot(sigma_disp_df_independent["time"]*1e9, sigma_disp_df_independent[probe]*1e6, label=probe)
         plt.xlabel("time (ns)")
         plt.ylabel("displacement uncertainty (microns)")
         plt.title("uncorrelated (independent samples)")
