@@ -119,7 +119,55 @@ $$
 These nine numbers are a full probability mass function for the pair
 $(f_i, f_{i-1})$ — everything below is just moments of it.
 
-## 4. Variance of a neighboring sum
+## 4. A fixed correlation, for speed
+
+The four corner probabilities in §3 require knowing the correlation
+
+$$
+\rho_i = \frac{\mathrm{Cov}(\Delta\theta_i,\Delta\theta_{i-1})}{\sqrt{\mathrm{Var}(\Delta\theta_i)\,\mathrm{Var}(\Delta\theta_{i-1})}}
+$$
+
+exactly at every $i$ — in principle a different bivariate normal fit per
+pair. If the underlying phase noise is locally slowly-varying, i.e.
+$\mathrm{Var}(\theta_i)\approx\mathrm{Var}(\theta_{i-1})\approx\mathrm{Var}(\theta_{i-2})\approx v$
+over the span of three samples, then §0 gives
+
+$$
+\mathrm{Var}(\Delta\theta_i)\approx\mathrm{Var}(\Delta\theta_{i-1})\approx 2v,
+\qquad
+\mathrm{Cov}(\Delta\theta_i,\Delta\theta_{i-1})\approx -v
+$$
+
+and the correlation collapses to a single number, independent of $v$ itself:
+
+$$
+\rho_i \;\approx\; \frac{-v}{\sqrt{2v\cdot 2v}} \;=\; -\frac12
+$$
+
+Every neighboring pair, everywhere in the series, is then approximately *the
+same* bivariate-normal shape — recentered by its own $\mu_i$ and rescaled by
+its own $\mathrm{Var}(\Delta\theta_i)$, but never re-derived — instead of a
+bespoke correlation fit per pair. In the standardized coordinates
+$Z_i = (\Delta\theta_i-\mu_i)/\sqrt{\mathrm{Var}(\Delta\theta_i)}$, the
+covariance matrix behind every single pair in §3 becomes the one constant
+matrix
+
+$$
+\begin{pmatrix} 1 & -\tfrac12 \\ -\tfrac12 & 1 \end{pmatrix}
+$$
+
+This is an approximation, not an identity — it assumes the noise floor
+doesn't jump within a three-sample span — so it's only as good as that
+assumption. It also isn't a leap of faith: checked against real per-sample
+phase-noise data, the 5th–95th percentile of the *true*, per-pair $\rho_i$
+sits within $0.003$ of exactly $-\tfrac12$, so the approximation error is
+small relative to everything else already assumed in this derivation (§0's
+correlation-dies-after-one-neighbor structure, §1's dropped
+$\mathrm{Cov}(\theta_i, S_i)$ cross term). Its value is entirely
+computational: §3's corner probabilities can then all be read off *one*
+fixed distribution instead of a freshly-derived one at every single pair.
+
+## 5. Variance of a neighboring sum
 
 Group the nine regions by the value of $f_i+f_{i-1} \in \{-2,-1,0,1,2\}$:
 
@@ -138,7 +186,7 @@ $$
 
 directly from that distribution.
 
-## 5. Covariance of a neighboring pair
+## 6. Covariance of a neighboring pair
 
 The same nine regions give the cross moment for free: of the nine
 $(f_i,f_{i-1})$ outcomes, only the four **corners** have a nonzero product —
@@ -156,14 +204,14 @@ $$
 C_i \;:=\; \mathrm{Cov}(f_i, f_{i-1}) \;=\; E[f_i f_{i-1}] - E[f_i]\,E[f_{i-1}]
 $$
 
-Note the identity linking §2, §4, §5 — it's just the definition of variance
+Note the identity linking §2, §5, §6 — it's just the definition of variance
 of a sum:
 
 $$
 V_i = D_i + D_{i-1} + 2C_i
 $$
 
-## 6. Independence beyond nearest neighbors
+## 7. Independence beyond nearest neighbors
 
 From §0, $\Delta\theta_i \perp \Delta\theta_{i-2}$, and $f_i$, $f_{i-2}$ are
 deterministic functions of one input apiece, so independence of the inputs
@@ -173,11 +221,11 @@ $$
 \mathrm{Cov}(f_i, f_j) = 0 \qquad \text{for all } |i-j|\ge 2
 $$
 
-## 7. The covariance matrix is tridiagonal
+## 8. The covariance matrix is tridiagonal
 
-Collect $f_0, f_1, \dots, f_i$ into a vector. By §6, every entry more than
+Collect $f_0, f_1, \dots, f_i$ into a vector. By §7, every entry more than
 one step off the diagonal is exactly zero; the diagonal is $D_j$ (§2) and
-the one-off-diagonal entries are $C_j$ (§5). Writing it out from index $i$
+the one-off-diagonal entries are $C_j$ (§6). Writing it out from index $i$
 down to $0$:
 
 $$
@@ -193,10 +241,12 @@ C_i    & D_{i-1}& C_{i-1}& 0      & \cdots & 0 \\
 $$
 
 This is the exact joint second-moment structure of the correction sequence —
-no approximation beyond the independence established in §0/§6, which is
-itself exact for a Gaussian $\theta$ model.
+no approximation beyond the independence established in §0/§7, which is
+itself exact for a Gaussian $\theta$ model (§4's fixed correlation is a
+separate, later approximation, used only to compute the $C_j$ entries
+efficiently — it doesn't change what this matrix *is*).
 
-## 8. Variance of the running sum — proof and pattern
+## 9. Variance of the running sum — proof and pattern
 
 $S_i = \mathbf 1^\top \mathbf f$ where $\mathbf 1$ is the all-ones vector and
 $\mathbf f = (f_0,\dots,f_i)^\top$, so
@@ -207,7 +257,7 @@ $$
 $$
 
 — every diagonal entry once, every off-diagonal entry twice (symmetric
-matrix). Substituting $C_j = \tfrac12(V_j - D_j - D_{j-1})$ from §5 turns
+matrix). Substituting $C_j = \tfrac12(V_j - D_j - D_{j-1})$ from §6 turns
 this into a telescoping sum: each $D_j$ for $1 \le j \le i-1$ gets counted
 once by $\sum D_j$ and then cancelled once by the substitution, leaving only
 the two endpoints and the $V_j$'s:
@@ -237,23 +287,23 @@ $V_{i-n}$ and one new $-D_{i-n}$ as the window grows one index further back
 the two endpoints ($f_i$ and the oldest term in the sum) are never
 subtracted, since each appears in only one adjacent pair.
 
-## 9. Recursive form
+## 10. Recursive form
 
 The same result, read as a one-step update instead of a closed sum (useful
 if $S_i$ is wanted for every $i$, not just one): comparing consecutive rows
-of §8's pattern,
+of §9's pattern,
 
 $$
 \mathrm{Var}(S_i) = \mathrm{Var}(S_{i-1}) + V_i - D_{i-1}, \qquad \mathrm{Var}(S_0) = D_0
 $$
 
 Unrolling this recursion one step at a time regenerates exactly the pattern
-in §8 — it's the same statement either way, closed-form sum or recursion.
-The only thing either form leans on is §6: correlation dies after one step,
+in §9 — it's the same statement either way, closed-form sum or recursion.
+The only thing either form leans on is §7: correlation dies after one step,
 so extending the sum by one more term never needs to reach back further than
 the term it's adjacent to.
 
-## 10. Back to physical uncertainty
+## 11. Back to physical uncertainty
 
 $\mathrm{Var}(S_i)$ feeds back into §1's
 $\mathrm{Var}(\text{unwrapped phase}_i) = \mathrm{Var}(\theta_i) + 4\pi^2\mathrm{Var}(S_i)$,

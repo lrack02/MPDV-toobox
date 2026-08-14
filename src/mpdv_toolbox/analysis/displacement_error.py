@@ -55,13 +55,27 @@ def f_single_uncert(delta_theta, var_delta_theta):
     # f is +1 w.p. F_minus, -1 w.p. (1 - F_plus), 0 otherwise.
     return F_minus * (1 - F_minus) + F_plus * (1 - F_plus) + 2 * F_minus * (1 - F_plus)
 
-def f_double_uncert(delta_theta, var_delta_theta, var_theta):
+### Fixed bivariate normal used by f_double_uncert: standard normal marginals with
+### correlation rho = -1/2, the value Cov(Delta_theta_i, Delta_theta_i-1) /
+### sqrt(Var(Delta_theta_i) Var(Delta_theta_i-1)) reduces to when the underlying
+### theta noise is locally constant (Var(theta_i) ~= Var(theta_i-1) ~= Var(theta_i-2)):
+### Cov = -v, Var(Delta_theta) = 2v each -> rho = -v / (2v) = -1/2, independent of v.
+### Checked against this project's real shot data: rho is within 0.003 of -1/2 for the
+### 5th-95th percentile of samples, so this is a good approximation, not a rough one -
+### but it IS an approximation (assumes the noise floor doesn't jump step-to-step) and
+### is the reason this function no longer needs var_theta (only the standardized
+### marginal scale, from var_delta_theta, matters once rho is fixed).
+_RHO = -0.5
+_STANDARD_BIVARIATE_RHO = multivariate_normal(mean=[0, 0], cov=[[1, _RHO], [_RHO, 1]])
+
+def f_double_uncert(delta_theta, var_delta_theta):
     """
-    Analytic (no sampling) variance of f_i + f_{i-1}, the sum of adjacent
-    phase-unwrap corrections, from the joint (bivariate) normal distribution of
-    Delta_theta_i and Delta_theta_i-1. Looped explicitly over timesteps and
-    probes so each pair's full derivation - marginal CDFs, the 9-region
-    partition, then the variance of their sum - reads together in one place.
+    Variance of f_i + f_{i-1}, the sum of adjacent phase-unwrap corrections, from
+    the joint (bivariate) normal distribution of Delta_theta_i and Delta_theta_i-1,
+    approximating their correlation as the fixed rho = -1/2 in _STANDARD_BIVARIATE_RHO
+    (see its comment) rather than deriving it per pair - this lets every pair reuse
+    the same frozen bivariate normal and the whole computation run fully vectorized,
+    instead of building ~n_samples*n_channels separate bivariate distributions.
 
     Note: index 0 pairs the synthetic delta_theta[0] placeholder (see
     unwrap_phase/phas_uncert) with the real delta_theta[1]; phas_uncert
@@ -78,62 +92,66 @@ def f_double_uncert(delta_theta, var_delta_theta, var_theta):
 
     var_i = var_delta_theta[:-1]
     var_im1 = var_delta_theta[1:]
-    cov_delta = -var_theta[:-1]
+
+    valid = (
+        np.isfinite(dtheta_i) & np.isfinite(dtheta_im1)
+        & np.isfinite(var_i) & np.isfinite(var_im1)
+        & (var_i > 0) & (var_im1 > 0)
+    )
+    # Substitute a harmless value where invalid so sqrt/division below never warns;
+    # those entries get zeroed out again at the end via `valid`.
+    safe_std_i = np.sqrt(np.where(valid, var_i, 1.0))
+    safe_std_im1 = np.sqrt(np.where(valid, var_im1, 1.0))
+
+    # ========== STANDARDIZED MARGINAL THRESHOLDS ==========
+    h_minus = (-np.pi - dtheta_i) / safe_std_i
+    h_plus = (np.pi - dtheta_i) / safe_std_i
+    k_minus = (-np.pi - dtheta_im1) / safe_std_im1
+    k_plus = (np.pi - dtheta_im1) / safe_std_im1
+
+    # ========== MARGINAL CDFs (standard normal, now that thresholds are standardized) ==========
+    F_i_minus = norm.cdf(h_minus)
+    F_i_plus = norm.cdf(h_plus)
+    F_im1_minus = norm.cdf(k_minus)
+    F_im1_plus = norm.cdf(k_plus)
+
+    # ========== BIVARIATE CDF AT THE FOUR CORNERS, ONE FIXED DISTRIBUTION, VECTORIZED ==========
+    shape = h_minus.shape
+    def corner_cdf(h, k):
+        points = np.stack([h.ravel(), k.ravel()], axis=-1)
+        return _STANDARD_BIVARIATE_RHO.cdf(points).reshape(shape)
+
+    F_mm = corner_cdf(h_minus, k_minus)
+    F_mp = corner_cdf(h_minus, k_plus)
+    F_pm = corner_cdf(h_plus, k_minus)
+    F_pp = corner_cdf(h_plus, k_plus)
+
+    # ========== 9 REGIONS, one per (f_i, f_i-1) outcome ==========
+    R1 = F_mm                                      # (+1,+1)
+    R2 = F_pm - F_mm                                # (0,+1)
+    R3 = F_im1_minus - F_pm                         # (-1,+1)
+    R4 = F_mp - F_mm                                # (+1,0)
+    R5 = F_pp - F_pm - F_mp + F_mm                  # (0,0)
+    R6 = F_im1_plus - F_im1_minus - F_pp + F_pm     # (-1,0)
+    R7 = F_i_minus - F_mp                           # (+1,-1)
+    R8 = F_i_plus - F_i_minus - F_pp + F_mp         # (0,-1)
+    R9 = 1 - F_i_plus - F_im1_plus + F_pp           # (-1,-1)
 
     vals = np.array([2, 1, 0, -1, -2])  # the values f_i + f_{i-1} can take
+    probs = np.stack([
+        R1,            # sum = +2
+        R2 + R4,       # sum = +1
+        R3 + R5 + R7,  # sum = 0
+        R6 + R8,       # sum = -1
+        R9,            # sum = -2
+    ], axis=-1)
 
-    n_pairs, n_channels = dtheta_i.shape
-    var_f_double = np.zeros((n_pairs, n_channels))
-    for t in range(n_pairs):
-        for ch in range(n_channels):
-            m0, v0 = dtheta_i[t, ch], var_i[t, ch]
-            m1, v1 = dtheta_im1[t, ch], var_im1[t, ch]
-            c = cov_delta[t, ch]
+    # ========== VARIANCE OF THE SUM ==========
+    E_sum = np.sum(probs * vals, axis=-1)
+    E_sum2 = np.sum(probs * vals**2, axis=-1)
+    var_f_double = E_sum2 - E_sum**2
 
-            cov_mat = np.array([[v0, c], [c, v1]])
-            if not (np.isfinite(m0) and np.isfinite(m1) and np.all(np.isfinite(cov_mat))):
-                continue  # leave var_f_double[t, ch] at 0
-            if np.linalg.det(cov_mat) <= 0:
-                continue
-
-            # ========== MARGINAL CDFs ==========
-            F_i_minus = norm.cdf(-np.pi, loc=m0, scale=np.sqrt(v0))
-            F_i_plus = norm.cdf(np.pi, loc=m0, scale=np.sqrt(v0))
-            F_im1_minus = norm.cdf(-np.pi, loc=m1, scale=np.sqrt(v1))
-            F_im1_plus = norm.cdf(np.pi, loc=m1, scale=np.sqrt(v1))
-
-            # ========== BIVARIATE CDF AT THE FOUR CORNERS ==========
-            rv = multivariate_normal(mean=[m0, m1], cov=cov_mat)
-            F_mm = rv.cdf([-np.pi, -np.pi])
-            F_mp = rv.cdf([-np.pi, np.pi])
-            F_pm = rv.cdf([np.pi, -np.pi])
-            F_pp = rv.cdf([np.pi, np.pi])
-
-            # ========== 9 REGIONS, one per (f_i, f_i-1) outcome ==========
-            R1 = F_mm                                      # (+1,+1)
-            R2 = F_pm - F_mm                                # (0,+1)
-            R3 = F_im1_minus - F_pm                         # (-1,+1)
-            R4 = F_mp - F_mm                                # (+1,0)
-            R5 = F_pp - F_pm - F_mp + F_mm                  # (0,0)
-            R6 = F_im1_plus - F_im1_minus - F_pp + F_pm     # (-1,0)
-            R7 = F_i_minus - F_mp                           # (+1,-1)
-            R8 = F_i_plus - F_i_minus - F_pp + F_mp         # (0,-1)
-            R9 = 1 - F_i_plus - F_im1_plus + F_pp           # (-1,-1)
-
-            probs = np.array([
-                R1,            # sum = +2
-                R2 + R4,       # sum = +1
-                R3 + R5 + R7,  # sum = 0
-                R6 + R8,       # sum = -1
-                R9,            # sum = -2
-            ])
-
-            # ========== VARIANCE OF THE SUM ==========
-            E_sum = np.sum(probs * vals)
-            E_sum2 = np.sum(probs * vals**2)
-            var_f_double[t, ch] = E_sum2 - E_sum**2
-
-    return var_f_double
+    return np.where(valid, var_f_double, 0.0)
 
 def phas_uncert(delta_theta, noise_frac_df):
     var_theta = noise_frac_df[noise_frac_df.columns[1:]].to_numpy()
@@ -148,7 +166,7 @@ def phas_uncert(delta_theta, noise_frac_df):
     ###   f_double[k] = Var(f_k + f_k+1)   (adjacent-pair variance)
     ###   f_single[k] = Var(f_k)           (single-index variance)
     var_f_single = f_single_uncert(delta_theta, var_delta_theta)
-    var_f_double = f_double_uncert(delta_theta, var_delta_theta, var_theta)
+    var_f_double = f_double_uncert(delta_theta, var_delta_theta)
 
     ### var double is equal to var single at the first timestep
     var_f_double[0] = var_f_single[1]
@@ -198,6 +216,21 @@ def displacement_uncert(voltage_df, noise_frac_df, lam):
 
     theta, delta_theta, phas = unwrap_phase(analytical)
     var_theta, var_delta_theta, var_phas = phas_uncert(delta_theta, noise_frac_df)
+
+    sigma_pos = lam / 2 / np.pi * np.sqrt(var_phas)
+
+    sigma_disp_df = pd.DataFrame(data=np.column_stack((time, sigma_pos)), columns=noise_frac_df.columns)
+
+    return sigma_disp_df
+
+def displacement_uncert_independent(voltage_df, noise_frac_df, lam):
+    """Same as displacement_uncert, but via phas_uncert_independent - i.e. not
+    corrected for the correlation between neighboring unwrap corrections."""
+    time = noise_frac_df["time"]
+    analytical = extract_analytical(voltage_df, time)
+
+    theta, delta_theta, phas = unwrap_phase(analytical)
+    var_theta, var_delta_theta, var_phas = phas_uncert_independent(delta_theta, noise_frac_df)
 
     sigma_pos = lam / 2 / np.pi * np.sqrt(var_phas)
 
@@ -260,16 +293,20 @@ if __name__ == "__main__":
     plt.legend()
     plt.show()
 
+    sigma_disp_df_independent = displacement_uncert_independent(voltage_df, noise_frac_df, 1550e-9)
+
     plt.subplots(1,2,sharex=True)
     for probe in column_names[1:]:
         plt.subplot(121)
         plt.plot(sigma_disp_df["time"]*1e9, sigma_disp_df[probe]*1e6, label=probe)
         plt.xlabel("time (ns)")
         plt.ylabel("displacement uncertainty (microns)")
+        plt.title("correlated")
         plt.subplot(122)
-        plt.plot(noise_frac_df["time"]*1e9, 1/noise_frac_df[probe], label=probe)
+        plt.plot(sigma_disp_df_independent["time"]*1e9, sigma_disp_df_independent[probe]/sigma_disp_df[probe], label=probe)
         plt.xlabel("time (ns)")
-        plt.ylabel("snr")
+        plt.ylabel("displacement uncertainty (microns)")
+        plt.title("uncorrelated (independent samples)")
     plt.legend()
     plt.show()
 
