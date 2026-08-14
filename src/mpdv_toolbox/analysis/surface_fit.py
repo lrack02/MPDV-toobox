@@ -23,6 +23,13 @@ def surface_fit(base, disp_df, positions_csv, order=2, focus_scale=2.0, output_c
 
     time_values = disp_df["time"].values
 
+    # Keep only probes that are actually present in disp_df, in probe_locs order
+    probe_locs["probe_label"] = "probe_" + probe_locs["probe_number"].astype(str)
+    missing_probes = probe_locs.loc[~probe_locs["probe_label"].isin(disp_df.columns), "probe_label"].tolist()
+    if missing_probes:
+        print(f"Warning: {missing_probes} not found in disp_df, excluding from surface fit")
+    probe_locs = probe_locs[probe_locs["probe_label"].isin(disp_df.columns)].reset_index(drop=True)
+
     # Define x data
     x_values = probe_locs['x_position'].values / 1e6 #convert from microns to meters
     y_values = probe_locs['y_position'].values / 1e6 #convert from microns to meters
@@ -30,8 +37,7 @@ def surface_fit(base, disp_df, positions_csv, order=2, focus_scale=2.0, output_c
 
     # Order the probes
     disp_df_ordered = pd.DataFrame([])
-    for probe_num in probe_locs["probe_number"].values:
-        probe_label = "probe_" + str(probe_num)
+    for probe_label in probe_locs["probe_label"].values:
         disp_df_ordered[probe_label] = disp_df[probe_label]
 
     # Verify ordering
