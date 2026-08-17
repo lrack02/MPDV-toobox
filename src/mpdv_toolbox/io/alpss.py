@@ -3,6 +3,7 @@
 import pandas as pd
 import numpy as np
 from mpdv_toolbox.analysis.displacement_error import displacement_uncert
+from mpdv_toolbox.signal.detection import cusum
 import re
 from pathlib import Path
 
@@ -73,3 +74,19 @@ def filter_shot(data_df, uncert_df, threshold=10e-6):
     data_df_filtered = data_df.copy()
     data_df_filtered.iloc[:, 1:] = np.where(mask, data_df.values[:, 1:], np.nan)
     return data_df_filtered
+
+def start_time(vel_df, start_probe="probe_10", h = 1000, k = 5):
+    # time zero to beginning of signal (based off probe 10)
+    signal = vel_df[start_probe]
+    signal_clean = signal.dropna()
+
+    mu0 = np.mean(signal_clean.iloc[:5000])
+    sigma = np.std(signal_clean.iloc[:5000])
+    detect_idx_clean, change_idx_clean, G, s = cusum(signal_clean.values, mu0, sigma, h, k)
+
+    # Map back to original indices
+    detect_idx = signal_clean.index[detect_idx_clean]
+    change_idx = signal_clean.index[change_idx_clean]
+
+    start_time = vel_df["time"][detect_idx]
+    return start_time
