@@ -230,7 +230,7 @@ def displacement_uncert_independent(voltage_df, noise_frac_df, lam):
     return sigma_disp_df
 
 def save_displacement_uncert(base, sigma_disp_df):
-    sigma_disp_df.to_csv(base + "-dispuncert.csv")
+    sigma_disp_df.to_csv(base + "-dispuncert.csv", index=False)
 
 
 if __name__ == "__main__":

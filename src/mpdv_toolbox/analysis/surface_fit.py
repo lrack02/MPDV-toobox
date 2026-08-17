@@ -92,35 +92,41 @@ def surface_fit(base, disp_df, positions_csv, order=2, focus_scale=2.0, output_c
             continue
 
     # save to csv
-    popt_df = pd.DataFrame(popt_array)
-    pcov_df = pd.DataFrame(pcov_array)
+    popt_df = pd.DataFrame(data=np.column_stack((time_values, popt_array)))
+    pcov_df = pd.DataFrame(data=np.column_stack((time_values, pcov_array)))
 
     if order == 0:
-        popt_df.columns = ["C"]
-        pcov_df.columns = ["C-C"]
+        popt_df.columns = ["time", "C"]
+        pcov_df.columns = ["time", "C-C"]
 
     elif order == 1:
-        popt_df.columns = ["B1", "B2", "C"]
-        pcov_df.columns = ["B1-B1", "B1-B2", "B1-C",
+        popt_df.columns = ["time", 
+                           "B1", "B2", "C"]
+        pcov_df.columns = ["time", 
+                           "B1-B1", "B1-B2", "B1-C",
                            "B2-B1", "B2-B2", "B2-C",
                            "C-B1", "C-B2", "C-C"]
     elif order == "2_symmetric":
-        popt_df.columns = ["A11", "B1", "B2", "C"]
-        pcov_df.columns = ["A11-A11", "A11-B1", "A11-B2", "A11-C",
+        popt_df.columns = ["time", 
+                           "A11", "B1", "B2", "C"]
+        pcov_df.columns = ["time", 
+                           "A11-A11", "A11-B1", "A11-B2", "A11-C",
                            "B1-A11", "B1-B1", "B1-B2", "B1-C",
                            "B2-A11", "B2-B1", "B2-B2", "B2-C",
                            "C-A11", "C-B1", "C-B2", "C-C"]
     elif order == 2:
-        popt_df.columns = ["A11", "A12", "A22", "B1", "B2", "C"]
-        pcov_df.columns = ["A11-A11", "A11-A12", "A11-A22", "A11-B1", "A11-B2", "A11-C",
+        popt_df.columns = ["time", 
+                           "A11", "A12", "A22", "B1", "B2", "C"]
+        pcov_df.columns = ["time", 
+                           "A11-A11", "A11-A12", "A11-A22", "A11-B1", "A11-B2", "A11-C",
                            "A12-A11", "A12-A12", "A12-A22", "A12-B1", "A12-B2", "A12-C",
                            "A22-A11", "A22-A12", "A22-A22", "A22-B1", "A22-B2", "A22-C",
                            "B1-A11", "B1-A12", "B1-A22", "B1-B1", "B1-B2", "B1-C",
                            "B2-A11", "B2-A12", "B2-A22", "B2-B1", "B2-B2", "B2-C",
                            "C-A11", "C-A12", "C-A22", "C-B1", "C-B2", "C-C"]
 
-    popt_df.to_csv(base+"-fit_popt.csv")
-    pcov_df.to_csv(base+"-fit_pcov.csv")
+    popt_df.to_csv(base+"-fit_popt.csv", index=False)
+    pcov_df.to_csv(base+"-fit_pcov.csv", index=False)
     
     return popt_df, pcov_df
 
