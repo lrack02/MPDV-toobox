@@ -75,13 +75,13 @@ def filter_shot(data_df, uncert_df, threshold=10e-6):
     data_df_filtered.iloc[:, 1:] = np.where(mask, data_df.values[:, 1:], np.nan)
     return data_df_filtered
 
-def start_time(vel_df, start_probe="probe_10", h = 1000, k = 5):
+def start_time(vel_df, start_probe="probe_10", initial_sample = 500, h = 1000, k = 5):
     # time zero to beginning of signal (based off probe 10)
-    signal = vel_df[start_probe]
+    signal = -vel_df[start_probe]
     signal_clean = signal.dropna()
 
-    mu0 = np.mean(signal_clean.iloc[:5000])
-    sigma = np.std(signal_clean.iloc[:5000])
+    mu0 = np.mean(signal_clean.iloc[:initial_sample])
+    sigma = np.std(signal_clean.iloc[:initial_sample])
     detect_idx_clean, change_idx_clean, G, s = cusum(signal_clean.values, mu0, sigma, h, k)
 
     # Map back to original indices
