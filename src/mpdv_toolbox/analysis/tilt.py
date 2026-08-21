@@ -1,80 +1,58 @@
-"""Least-squares plane fitting across probe positions, used to quantify flyer tilt/planarity.
-
-Plane model:  z = a*x + b*y + c
-Normal:       n = [-a, -b, 1] / ||[-a, -b, 1]||
-Tilt:         arccos(nz) in degrees
-"""
-
-from typing import NamedTuple
-
 import numpy as np
 
 
-class PlaneFit(NamedTuple):
-    a: float
-    b: float
-    c: float
-    nx: float
-    ny: float
-    nz: float
-    tilt_deg: float
-    r_squared: float
-    rmse: float
-
-
-def fit_plane(x, y, z):
-    """Fit a plane to one time step of probe positions/displacements.
-
-    x, y, z : array-like, one value per probe. NaNs are excluded. Returns a
-    ``PlaneFit`` of all-NaN if fewer than 3 probes have finite values.
+def min_max_closure_velocity(popt_df, v_f = 800, t_eval=200e-9, r=750e-6):
     """
-    x, y, z = np.asarray(x), np.asarray(y), np.asarray(z)
-    valid = ~(np.isnan(x) | np.isnan(y) | np.isnan(z))
-    if valid.sum() < 3:
-        return PlaneFit(*([np.nan] * 9))
+    Returns the minimum and maximum closure front velocity at the flyer edge for a given flyer radius.
 
-    xv, yv, zv = x[valid], y[valid], z[valid]
-    A = np.column_stack((xv, yv, np.ones(len(xv))))
-    coeff, *_ = np.linalg.lstsq(A, zv, rcond=None)
-    a, b, c = coeff
+    Assumes symmetric quadratic taylor expansion ("2_symmetric" fit) where A is a 
+    diagonal matrix where A11=A22 and A12=0.
 
-    zpred = A @ coeff
-    ss_res = np.sum((zv - zpred) ** 2)
-    ss_tot = np.sum((zv - zv.mean()) ** 2)
-    r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else np.nan
-    rmse = np.sqrt(ss_res / len(zv))
-
-    normal = np.array([-a, -b, 1.0])
-    normal /= np.linalg.norm(normal)
-    tilt_deg = np.degrees(np.arccos(np.clip(normal[2], -1, 1)))
-
-    return PlaneFit(a, b, c, normal[0], normal[1], normal[2], tilt_deg, r2, rmse)
-
-
-def fit_plane_batch(x, y, z_matrix):
-    """Vectorized ``fit_plane`` across many time steps at once.
-
-    x, y : array-like, shape (Nprobes,), assumed finite for all probes.
-    z_matrix : array-like, shape (Nt, Nprobes), assumed finite for every entry.
-
-    Returns arrays (a, b, c, nx, ny, nz, tilt_deg, r_squared, rmse), each shape (Nt,).
+    popt_df: dataframe from the fitting solution
+    v_f: flyer impact velocity (m/s)
+    t_eval: flyer impact time (s)
+    r: flyer radius (m)
+    
     """
-    x, y, z_matrix = np.asarray(x), np.asarray(y), np.asarray(z_matrix)
-    A = np.column_stack((x, y, np.ones(len(x))))
-    pinv_A = np.linalg.pinv(A)
-    coeffs = (pinv_A @ z_matrix.T).T  # (Nt, 3)
+    t_eval_idx = np.argmin(np.abs(popt_df["time"] - t_eval))
 
-    normals = np.column_stack([-coeffs[:, 0], -coeffs[:, 1], np.ones(len(coeffs))])
-    normals /= np.linalg.norm(normals, axis=1, keepdims=True)
+    A11 = popt_df["A11"][t_eval_idx]
+    B1 = popt_df["B1"][t_eval_idx]
+    B2 = popt_df["B2"][t_eval_idx]
 
-    zpred = (A @ coeffs.T).T
-    zmean = z_matrix.mean(axis=1, keepdims=True)
-    ss_res = np.sum((z_matrix - zpred) ** 2, axis=1)
-    ss_tot = np.sum((z_matrix - zmean) ** 2, axis=1)
-    r2 = np.where(ss_tot > 0, 1.0 - ss_res / ss_tot, np.nan)
-    rmse = np.sqrt(ss_res / z_matrix.shape[1])
-    tilt_deg = np.degrees(np.arccos(np.clip(normals[:, 2], -1, 1)))
+    thetas = np.array([np.atan(B2/B1), np.atan(B2/B1)+np.pi])
 
-    return (coeffs[:, 0], coeffs[:, 1], coeffs[:, 2],
-            normals[:, 0], normals[:, 1], normals[:, 2],
-            tilt_deg, r2, rmse)
+    v_c = v_f / np.sqrt((A11 * r * np.cos(thetas) + B1)**2+(A11 * r * np.sin(thetas) + B2)**2)
+
+    min_v_c = np.min(v_c)
+    max_v_c = np.max(v_c)
+
+    return min_v_c, max_v_c
+
+def tilt_vs_time(popt_df):
+    """ 
+    returns the stereographic projection of the flyer (phi: azimuthal angle, theta: x-y plane projection angle) 
+    tilt as an array of same length as time
+
+    popt_df: dataframe from the fitting solution
+    """
+    grad = popt_df[["B1", "B2"]].values
+    phi = np.arctan(np.linalg.norm(grad, axis = 1))
+    theta = np.arctan2(grad[:,1], grad[:,0])
+    return phi, theta
+
+def tilt_at_time(popt_df, t_eval):
+    """ 
+    returns the stereographic projection of the flyer (phi: azimuthal angle, theta: x-y plane projection angle) 
+    tilt at a specific time t_eval
+
+    popt_df: dataframe from the fitting solution
+    t_eval: evaluation time
+    """
+    t_eval_idx = np.argmin(np.abs(popt_df["time"] - t_eval))
+
+    grad = popt_df[["B1", "B2"]].values[t_eval_idx]
+    phi = np.arctan(np.linalg.norm(grad))
+    theta = np.arctan2(grad[1], grad[0])
+
+    return phi, theta
