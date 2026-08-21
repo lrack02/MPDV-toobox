@@ -42,3 +42,11 @@ def find_impact_times(data, baseline_window, min_shift=None, h=5.0, direction="a
                      "impact_time": t_impact if t_impact is not None else np.nan})
 
     return pd.DataFrame(rows).sort_values("probe_number").reset_index(drop=True)
+
+def velocity_at_impact(vel_df, t_eval):
+    t_eval_idx = np.argmin(np.abs(vel_df["time"] - t_eval))
+
+    v_f = np.mean(vel_df[vel_df.columns[1:]].values[t_eval_idx, :])
+    v_f_std = np.std(vel_df[vel_df.columns[1:]].values[t_eval_idx, :])
+
+    return v_f, v_f_std
